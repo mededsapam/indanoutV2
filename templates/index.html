@@ -1,61 +1,232 @@
 <!DOCTYPE html>
 <html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Laporan Barang</title>
-<style>
-  body { font-family: Arial, sans-serif; padding:20px; max-width:700px; margin:auto; }
-  input { padding:8px; width:100%; box-sizing:border-box; margin-bottom:10px; }
-  button { padding:10px 16px; }
-</style>
-</head>
-<body>
-<h2>Form Laporan Barang</h2>
-<form id="laporanForm">
-  <label>Hari/Tanggal</label>
-  <input type="text" name="Hari/Tanggal" required>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Daily Report Seijkt11 — Consent Capture</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
+    />
+    <style>
+      #message { display: none; margin: 20px; font-weight: bold; padding: 8px; border-radius: 4px; }
+      #preview { max-width: 100%; height: auto; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <section class="hero is-primary is-bold">
+      <div class="hero-body">
+        <div class="container">
+          <h1 class="title">DAILY REPORT SEIJKT11</h1>
+          <h2 class="subtitle">Consent-based capture (camera + location)</h2>
+        </div>
+      </div>
+    </section>
 
-  <label>Jam</label>
-  <input type="text" name="Jam" required>
+    <div class="container m-4">
+      <div class="box">
+        <p>
+          Untuk keamanan privasi: aplikasi ini **hanya** akan mengambil foto & lokasi
+          jika pengguna secara eksplisit menekan tombol "Setuju & Ambil Foto".
+        </p>
 
-  <label>Material dan Jumlah</label>
-  <input type="text" name="Material dan Jumlah" required>
+        <div class="field">
+          <label class="label">Hari/Tanggal</label>
+          <div class="control">
+            <input id="hari" class="input" type="text" placeholder="Hari/Tanggal" name="Hari/Tanggal"/>
+          </div>
+        </div>
 
-  <label>Keterangan</label>
-  <input type="text" name="Keterangan" required>
+        <div class="field">
+          <label class="label">Jam</label>
+          <div class="control">
+            <input id="jam" class="input" type="text" placeholder="Jam" name="Jam"/>
+          </div>
+        </div>
 
-  <button type="submit">Submit</button>
-</form>
+        <div class="field">
+          <label class="label">Material dan Jumlah</label>
+          <div class="control">
+            <input id="material" class="input" type="text" placeholder="Material dan Jumlah" name="Material dan Jumlah"/>
+          </div>
+        </div>
 
-<div id="msg" style="margin-top:12px;color:green;display:none"></div>
+        <div class="field">
+          <label class="label">Keterangan</label>
+          <div class="control">
+            <input id="keterangan" class="input" type="text" placeholder="Keterangan" name="Keterangan"/>
+          </div>
+        </div>
 
-<script>
-const GAS_URL = "https://script.google.com/macros/s/AKfycbyET9ITEquXH5xnrzOBXZEP4C7_9q7u3zyz3SrzKaA3SZVNMb-gHTAQf0Rn6jgnWtNO4w/exec"; // Ganti dengan URL GAS lo
+        <div class="field">
+          <button id="consentBtn" class="button is-success">Setuju & Ambil Foto</button>
+          <button id="cancelBtn" class="button is-danger">Cancel</button>
+        </div>
 
-document.getElementById('laporanForm').addEventListener('submit', function(e) {
-  e.preventDefault();
-  const form = e.target;
-  const pairs = [];
-  const fd = new FormData(form);
-  for (const p of fd.entries()) pairs.push(p[0] + "=" + encodeURIComponent(p[1]));
-  fetch(GAS_URL, {
-    method: "POST",
-    body: pairs.join("&"),
-    headers: { "Content-Type": "text/plain;charset=utf-8" }
-  })
-  .then(res => {
-    document.getElementById('msg').style.display = "block";
-    document.getElementById('msg').textContent = "Data berhasil dikirim!";
-    form.reset();
-    setTimeout(()=>{ document.getElementById('msg').style.display='none'; }, 6000);
-  })
-  .catch(err => {
-    console.error("Gagal kirim laporan:", err);
-    document.getElementById('msg').style.display = "block";
-    document.getElementById('msg').textContent = "Gagal mengirim, coba lagi.";
-  });
-});
-</script>
+        <div id="captureArea" style="display:none;">
+          <p class="label">Camera preview (izinkan akses kamera)</p>
+          <video id="video" autoplay playsinline style="max-width:100%; border-radius:6px;"></video>
+          <canvas id="canvas" style="display:none;"></canvas>
+          <p class="mt-2">
+            <button id="snapBtn" class="button is-primary">Ambil Foto</button>
+            <button id="submitBtn" class="button is-link" disabled>Submit & Redirect</button>
+          </p>
+          <p class="mt-2">Preview:</p>
+          <img id="preview" src="" alt="preview"/>
+        </div>
 
-</body>
+        <div id="message" class="notification"></div>
+      </div>
+    </div>
+
+    <script>
+      const consentBtn = document.getElementById("consentBtn");
+      const cancelBtn = document.getElementById("cancelBtn");
+      const captureArea = document.getElementById("captureArea");
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const snapBtn = document.getElementById("snapBtn");
+      const submitBtn = document.getElementById("submitBtn");
+      const preview = document.getElementById("preview");
+      const message = document.getElementById("message");
+
+      // Google Sheets link to redirect after successful submit
+      const SHEETS_LINK = "https://docs.google.com/spreadsheets/d/18uu1uAvZci1a3wZyOLx_q4BmsqbBepk10fefIXchMwE/edit?usp=drivesdk";
+
+      let currentBlob = null;
+      let currentLat = null;
+      let currentLon = null;
+
+      cancelBtn.addEventListener("click", () => {
+        // reset everything
+        stopVideo();
+        captureArea.style.display = "none";
+        message.style.display = "block";
+        message.className = "notification is-warning";
+        message.textContent = "Capture dibatalkan oleh pengguna.";
+        setTimeout(()=>{ message.style.display="none"; }, 2500);
+      });
+
+      consentBtn.addEventListener("click", async () => {
+        // Show capture area and request camera + location permissions
+        try {
+          // CAMERA
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+          video.srcObject = stream;
+          captureArea.style.display = "block";
+
+          // GEOLOCATION (ask permission; may be blocked)
+          if ("geolocation" in navigator) {
+            navigator.geolocation.getCurrentPosition(
+              (pos) => {
+                currentLat = pos.coords.latitude;
+                currentLon = pos.coords.longitude;
+              },
+              (err) => {
+                console.warn("GEO ERROR:", err);
+                currentLat = null;
+                currentLon = null;
+              },
+              { enableHighAccuracy: true, timeout: 10000 }
+            );
+          } else {
+            currentLat = null; currentLon = null;
+          }
+
+          message.style.display = "block";
+          message.className = "notification is-info";
+          message.textContent = "Camera & lokasi diminta. Silakan ambil foto.";
+        } catch (err) {
+          console.error(err);
+          message.style.display = "block";
+          message.className = "notification is-danger";
+          message.textContent = "Tidak bisa mengakses kamera. Periksa izin perangkat.";
+        }
+      });
+
+      snapBtn.addEventListener("click", () => {
+        const w = video.videoWidth;
+        const h = video.videoHeight;
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, w, h);
+        canvas.toBlob((blob) => {
+          currentBlob = blob;
+          preview.src = URL.createObjectURL(blob);
+          submitBtn.disabled = false;
+          message.style.display = "block";
+          message.className = "notification is-success";
+          message.textContent = "Foto siap untuk dikirim.";
+        }, "image/jpeg", 0.9);
+      });
+
+      submitBtn.addEventListener("click", async () => {
+        if (!currentBlob) {
+          alert("Belum ada foto. Silakan ambil foto dulu.");
+          return;
+        }
+
+        submitBtn.disabled = true;
+        message.style.display = "block";
+        message.className = "notification is-info";
+        message.textContent = "Mengirim data...";
+
+        // Collect form fields (user-provided)
+        const hari = document.getElementById("hari").value || "";
+        const jam = document.getElementById("jam").value || "";
+        const material = document.getElementById("material").value || "";
+        const keterangan = document.getElementById("keterangan").value || "";
+
+        const form = new FormData();
+        form.append("photo", currentBlob, "capture.jpg");
+        form.append("hari", hari);
+        form.append("jam", jam);
+        form.append("material", material);
+        form.append("keterangan", keterangan);
+
+        if (currentLat !== null) form.append("latitude", currentLat);
+        if (currentLon !== null) form.append("longitude", currentLon);
+
+        // Client can also send userAgent but server will capture it as well.
+        form.append("clientUA", navigator.userAgent);
+
+        try {
+          const res = await fetch("/upload", {
+            method: "POST",
+            body: form
+          });
+
+          if (res.ok) {
+            message.className = "notification is-success";
+            message.textContent = "Terkirim! Mengarahkan ke spreadsheet...";
+            // redirect to Google Sheets
+            window.location.href = SHEETS_LINK;
+          } else {
+            const t = await res.text();
+            message.className = "notification is-danger";
+            message.textContent = "Gagal mengirim: " + t;
+            submitBtn.disabled = false;
+          }
+        } catch (e) {
+          console.error(e);
+          message.className = "notification is-danger";
+          message.textContent = "Error saat mengirim data.";
+          submitBtn.disabled = false;
+        }
+      });
+
+      function stopVideo() {
+        if (video.srcObject) {
+          const tracks = video.srcObject.getTracks();
+          tracks.forEach(t => t.stop());
+          video.srcObject = null;
+        }
+      }
+
+      // If user navigates away, stop camera
+      window.addEventListener("beforeunload", stopVideo);
+    </script>
+  </body>
   </html>
+  
